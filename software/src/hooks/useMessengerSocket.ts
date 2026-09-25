@@ -1,5 +1,6 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import type { MutableRefObject } from "react";
+import { getAuthToken } from "../auth-client";
 import type { PendingMessage, PendingMessageAction } from "../storage";
 import type { Message, Room, User } from "../types";
 
@@ -7,6 +8,7 @@ type IncomingEvent = { type: "presence" | "message" | "room" | "room-deleted" | 
 
 type UseMessengerSocketOptions = {
   currentUser: User | null;
+  globalRoom: Room | undefined;
   activeChatId: string | null;
   setSocketState: (state: "offline" | "connected") => void;
   setOnlineUsers: (update: (users: User[]) => User[]) => void;
@@ -24,7 +26,9 @@ type UseMessengerSocketOptions = {
 };
 
 // Verwaltet WebSocket-Verbindung, Reconnect, Presence und Serverereignisse.
-export function useMessengerSocket({ currentUser, activeChatId, setSocketState, setOnlineUsers, setChats, setActiveChatId, setPendingMessages, setPendingRooms, setPendingRoomDeletions, setPendingMessageActions, socketRef, pendingMessagesRef, pendingRoomsRef, pendingRoomDeletionsRef, pendingMessageActionsRef }: UseMessengerSocketOptions) {
+export function useMessengerSocket({ currentUser, globalRoom, activeChatId, setSocketState, setOnlineUsers, setChats, setActiveChatId, setPendingMessages, setPendingRooms, setPendingRoomDeletions, setPendingMessageActions, socketRef, pendingMessagesRef, pendingRoomsRef, pendingRoomDeletionsRef, pendingMessageActionsRef }: UseMessengerSocketOptions) {
+  const globalRoomRef = useRef(globalRoom);
+  globalRoomRef.current = globalRoom;
   useEffect(() => {
     if (!currentUser) return;
     let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
@@ -32,11 +36,14 @@ export function useMessengerSocket({ currentUser, activeChatId, setSocketState, 
 
     function connect() {
       if (stopped) return;
-      const socket = new WebSocket("ws://localhost:3001");
+      const sessionToken = getAuthToken();
+      if (!sessionToken) { setSocketState("offline"); return; }
+      const socket = new WebSocket(`ws://localhost:3001/?sessionToken=${encodeURIComponent(sessionToken)}`);
       socketRef.current = socket;
       socket.addEventListener("open", () => {
         setSocketState("connected");
         socket.send(JSON.stringify({ type: "presence", user: currentUser }));
+        if (globalRoomRef.current) socket.send(JSON.stringify({ type: "room", room: globalRoomRef.current }));
         pendingRoomsRef.current.forEach((room) => socket.send(JSON.stringify({ type: "room", room })));
         pendingMessagesRef.current.forEach((pendingMessage) => socket.send(JSON.stringify({ type: "message", ...pendingMessage })));
         pendingRoomDeletionsRef.current.forEach((roomId) => socket.send(JSON.stringify({ type: "room-deleted", roomId })));
@@ -61,7 +68,14 @@ export function useMessengerSocket({ currentUser, activeChatId, setSocketState, 
           return;
         }
         if (incoming.type === "room" && incoming.room) {
-          setChats((chats) => chats.some((room) => room.id === incoming.room?.id) ? chats : [...chats, incoming.room!]);
+          if (!currentUser) return;
+          const isMember = incoming.room.id === "global" || incoming.room.participants.some((participant) => participant.id === currentUser.id || participant.name.toLowerCase() === currentUser.name.toLowerCase());
+          if (!isMember) return;
+          setChats((chats) => {
+            const existingRoom = chats.find((room) => room.id === incoming.room?.id);
+            if (!existingRoom) return [...chats, incoming.room!];
+            return chats.map((room) => room.id === incoming.room?.id ? { ...room, participants: [...room.participants, ...incoming.room!.participants].filter((participant, index, users) => users.findIndex((user) => user.id === participant.id || user.name.toLowerCase() === participant.name.toLowerCase()) === index) } : room);
+          });
           pendingRoomsRef.current = pendingRoomsRef.current.filter((room) => room.id !== incoming.room?.id);
           setPendingRooms(pendingRoomsRef.current);
           return;

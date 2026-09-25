@@ -2,6 +2,10 @@ import type { Message, Room, User } from "./types";
 
 const STORAGE_KEY = "messenger-app-state";
 
+function getStorageKey(userId?: string | null) {
+  return `${STORAGE_KEY}:${userId ?? "anonymous"}`;
+}
+
 export type PendingMessage = {
   chatId: string;
   message: Message;
@@ -14,6 +18,7 @@ export type PendingMessageAction = {
   authorId: string;
   text?: string;
   reactions?: Record<string, string[]>;
+  emoji?: string;
 };
 
 export type StoredAppState = {
@@ -25,14 +30,14 @@ export type StoredAppState = {
   pendingMessageActions: PendingMessageAction[];
 };
 
-export function loadAppState(defaultRooms: Room[]): StoredAppState {
+export function loadAppState(defaultRooms: Room[], userId?: string | null): StoredAppState {
   // Lädt den letzten Zustand und stellt den geschützten globalen Raum wieder her.
   if (typeof window === "undefined") {
     return { currentUser: null, rooms: defaultRooms, pendingMessages: [], pendingRooms: [], pendingRoomDeletions: [], pendingMessageActions: [] };
   }
 
   try {
-    const storedState = window.localStorage.getItem(STORAGE_KEY);
+    const storedState = window.localStorage.getItem(getStorageKey(userId));
     if (!storedState) {
       return { currentUser: null, rooms: defaultRooms, pendingMessages: [], pendingRooms: [], pendingRoomDeletions: [], pendingMessageActions: [] };
     }
@@ -56,5 +61,5 @@ export function loadAppState(defaultRooms: Room[]): StoredAppState {
 export function saveAppState(state: StoredAppState) {
   // Schreibt den kompletten Offline-Zustand als einen konsistenten Snapshot.
   if (typeof window === "undefined") return;
-  window.localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  window.localStorage.setItem(getStorageKey(state.currentUser?.id), JSON.stringify(state));
 }

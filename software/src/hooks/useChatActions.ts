@@ -1,6 +1,7 @@
 import type { FormEvent, MutableRefObject } from "react";
 
 import { now } from "../data";
+import { canMutateMessage, createReplyReference, toggleUserReaction, upsertPendingMessageAction } from "../message-actions";
 import { saveAppState, type PendingMessage, type PendingMessageAction } from "../storage";
 import type { ImageAttachment, Message, ReplyReference, Room, User } from "../types";
 
@@ -128,20 +129,20 @@ export function useChatActions({ currentUser, nameInput, chats, activeChat, mess
   }
 
   function saveAction(action: PendingMessageAction) {
-    const nextActions = [...pendingMessageActionsRef.current.filter((pendingAction) => pendingAction.messageId !== action.messageId), action];
+    const nextActions = upsertPendingMessageAction(pendingMessageActionsRef.current, action);
     pendingMessageActionsRef.current = nextActions;
     setPendingMessageActions(nextActions);
     if (socketRef.current?.readyState === WebSocket.OPEN) socketRef.current.send(JSON.stringify(action));
   }
 
   function deleteMessage(message: Message) {
-    if (!currentUser || message.author.id !== currentUser.id || message.deleted) return;
+    if (!currentUser || !canMutateMessage(message, currentUser.id)) return;
     updateMessage(message.id, (currentMessage) => ({ ...currentMessage, text: "Diese Nachricht wurde gelöscht", deleted: true, edited: false }), activeChat?.id, "Diese Nachricht wurde gelöscht");
     saveAction({ type: "message-deleted", chatId: activeChat?.id ?? "", messageId: message.id, authorId: currentUser.id });
   }
 
   function editMessage(message: Message) {
-    if (!currentUser || message.author.id !== currentUser.id || message.deleted) return;
+    if (!currentUser || !canMutateMessage(message, currentUser.id)) return;
     const nextText = editingText.trim();
     if (!nextText) return;
     updateMessage(message.id, (currentMessage) => ({ ...currentMessage, text: nextText, edited: true }));
@@ -151,16 +152,14 @@ export function useChatActions({ currentUser, nameInput, chats, activeChat, mess
 
   function toggleReaction(message: Message, emoji: string) {
     if (!currentUser || message.deleted) return;
-    const reactions = Object.fromEntries(Object.entries(message.reactions ?? {}).map(([reaction, userIds]) => [reaction, [...userIds]]));
-    const userIds = reactions[emoji] ?? [];
-    reactions[emoji] = userIds.includes(currentUser.id) ? userIds.filter((userId) => userId !== currentUser.id) : [...userIds, currentUser.id];
-    if (reactions[emoji].length === 0) delete reactions[emoji];
+    const reactions = toggleUserReaction(message.reactions ?? {}, currentUser.id, emoji);
     updateMessage(message.id, (currentMessage) => ({ ...currentMessage, reactions }));
-    saveAction({ type: "message-reacted", chatId: activeChat?.id ?? "", messageId: message.id, authorId: currentUser.id, reactions });
+    saveAction({ type: "message-reacted", chatId: activeChat?.id ?? "", messageId: message.id, authorId: currentUser.id, emoji, reactions });
   }
 
   function replyToMessage(message: Message) {
-    setReplyingTo({ messageId: message.id, authorName: message.author.name, text: message.text, imageName: message.image?.name });
+    const replyReference = createReplyReference(message);
+    if (replyReference) setReplyingTo(replyReference);
   }
 
   function deleteRoom() {

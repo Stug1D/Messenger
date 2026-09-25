@@ -58,3 +58,29 @@ export function saveMessage(chatId: string, message: Message) {
   database.query("INSERT OR IGNORE INTO messages (id, room_id, author_id, author_json, text, time, deleted, edited, reactions_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)").run(message.id, chatId, message.author.id, JSON.stringify(message.author), message.text, message.time, message.deleted ? 1 : 0, message.edited ? 1 : 0, JSON.stringify(message.reactions ?? {}));
   database.query("INSERT OR IGNORE INTO messages (id, room_id, author_id, author_json, text, time, deleted, edited, reactions_json, image_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)").run(message.id, chatId, message.author.id, JSON.stringify(message.author), message.text, message.time, message.deleted ? 1 : 0, message.edited ? 1 : 0, JSON.stringify(message.reactions ?? {}), JSON.stringify(message.image ?? null));
 }
+
+export function isRoomMember(roomId: string, userId: string, userName?: string) {
+  const row = database.query("SELECT participants_json FROM rooms WHERE id = ?").get(roomId) as { participants_json: string } | null;
+  if (!row) return false;
+  const participants = JSON.parse(row.participants_json) as User[];
+  return participants.some((participant) => participant.id === userId || Boolean(userName && participant.name.toLowerCase() === userName.toLowerCase()));
+}
+
+export function getMessageRoomId(messageId: string) {
+  const row = database.query("SELECT room_id FROM messages WHERE id = ?").get(messageId) as { room_id: string } | null;
+  return row?.room_id;
+}
+
+export function roomExists(roomId: string) {
+  return Boolean(database.query("SELECT id FROM rooms WHERE id = ?").get(roomId));
+}
+
+export function getRoomParticipants(roomId: string) {
+  const row = database.query("SELECT participants_json FROM rooms WHERE id = ?").get(roomId) as { participants_json: string } | null;
+  return row ? JSON.parse(row.participants_json) as User[] : [];
+}
+
+export function getMessageReactions(messageId: string) {
+  const row = database.query("SELECT reactions_json FROM messages WHERE id = ?").get(messageId) as { reactions_json: string } | null;
+  return row ? JSON.parse(row.reactions_json) as Record<string, string[]> : null;
+}

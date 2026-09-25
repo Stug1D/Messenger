@@ -41,6 +41,94 @@ Dieses Dokument protokolliert die technischen Entscheidungen und ihre Begruendun
 - **Versionierung:** Die lokale SQLite-Datei wird ueber `.gitignore` ausgeschlossen, weil sie Laufzeitdaten enthaelt.
 - **Validierung:** `bunx tsc --noEmit` und `bun run build` laufen erfolgreich.
 
+## 2026-09-24 - Räume beim Reload erhalten
+
+- **Problem:** Beim Auth-Reload wurde der vorläufige globale Zustand gespeichert, bevor die accountbezogenen Räume aus `localStorage` geladen waren.
+- **Lösung:** Speichern wird blockiert, bis der Zustand des aktuellen Accounts vollständig geladen wurde.
+- **Ergebnis:** Eigene Räume und Nachrichten bleiben beim Neuladen erhalten und werden nur durch eine explizite Löschung entfernt.
+- **Validierung:** `bunx tsc --noEmit`, `bun run build` und `bun test` laufen erfolgreich.
+
+## 2026-09-24 - Chatfenster beim Reload erhalten
+
+- **Tabzustand:** Die ID des zuletzt geöffneten Chats wird pro Account in `sessionStorage` gespeichert.
+- **Reload:** Nach dem Laden des Account-Zustands wird der gespeicherte Raum wieder geöffnet, statt zur Chatübersicht zurückzufallen.
+- **Navigation:** Zurück zur Übersicht und expliziter Logout entfernen den gespeicherten Chat.
+- **Validierung:** `bunx tsc --noEmit`, `bun run build` und `bun test` laufen erfolgreich.
+
+## 2026-09-24 - Unit-Tests für Offline-Aktionen
+
+- **Testwerkzeug:** Bun Test (`bun test`) wurde ohne zusätzliches Testframework verwendet.
+- **Testmodul:** `src/message-actions.test.ts` testet pure Reply- und Pending-Aktionslogik.
+- **Abgedeckte Fälle:** Reply-Snapshot bleibt bei nachträglichem Editieren oder Löschen stabil; Replies auf bereits gelöschte Nachrichten werden verhindert; Bild-Replies, Nachrichtenberechtigungen, Reaktions-Toggle und unabhängige Offline-Aktionen werden geprüft.
+- **Ergebnis:** 9 Tests bestanden, 0 fehlgeschlagen.
+- **Weitere Checks:** `bunx tsc --noEmit` und `bun run build` laufen erfolgreich.
+
+## 2026-09-24 - Bidirektionale Nachrichten in neuen Räumen
+
+- **Problem:** Neue Raumteilnehmer wurden zunächst mit lokalen Zufalls-IDs gespeichert. Der Server erkannte die verifizierte Account-ID des zweiten Nutzers deshalb nicht als Mitglied.
+- **Lösung:** Die serverseitige Mitgliedschaftsprüfung akzeptiert jetzt die verifizierte User-ID oder den normalisierten Teilnehmernamen.
+- **Ergebnis:** Berechtigte Teilnehmer können in neu erstellten Einzel- und Gruppenchats in beide Richtungen Nachrichten senden.
+- **Validierung:** `bunx tsc --noEmit` und `bun run build` laufen erfolgreich; der aktualisierte Server startet auf Port 3001.
+
+## 2026-09-24 - Neue Räume synchronisieren
+
+- **Problem:** Eingehende neue Räume wurden nach der Hook-Aufteilung nur verarbeitet, wenn sie lokal bereits existierten.
+- **Lösung:** Berechtigte Empfänger fügen neue Räume jetzt direkt ihrer Chatliste hinzu.
+- **Zugriff:** Der Client zeigt den Raum nur beim globalen Raum oder wenn die aktuelle User-ID bzw. der Nutzername in der Teilnehmerliste enthalten ist.
+- **Validierung:** `bunx tsc --noEmit` und `bun run build` laufen erfolgreich.
+
+## 2026-09-24 - Auth-CORS-Fix
+
+- **Problem:** Bearer-Auth-Requests lösten im Browser `Failed to fetch` aus, weil der CORS-Preflight den `Authorization`-Header nicht erlaubte.
+- **Lösung:** Der Auth-Server erlaubt `Content-Type`, `Cookie` und `Authorization` im Preflight.
+- **Validierung:** TypeScript-Check und Build laufen erfolgreich; der aktualisierte Server startet auf Port 3001.
+
+## 2026-09-24 - Session-Erhalt beim Reload
+
+- **Reload:** Ein Tab zeigt während der Sessionprüfung zunächst einen Ladezustand und interpretiert den asynchronen Request nicht als Logout.
+- **Tab-Session:** User-Profil und Bearer-Token werden in `sessionStorage` desselben Tabs gehalten und nach einem Reload erneut verwendet.
+- **Offline:** Falls der Server beim Reload kurzzeitig nicht erreichbar ist, kann der zuletzt authentifizierte Tab-User lokal weiter angezeigt werden.
+- **Logout:** Erst die explizite Logout-Aktion entfernt Token und User-Profil aus `sessionStorage`.
+- **Validierung:** `bunx tsc --noEmit` und `bun run build` laufen erfolgreich.
+
+## 2026-09-24 - Unabhängige Tab-Sessions
+
+- **Problem:** Better-Auth-Cookies werden von allen Tabs derselben Domain geteilt und würden beim Login in einem neuen Tab die sichtbare Session beeinflussen.
+- **Lösung:** Das Better-Auth-Bearer-Plugin stellt ein Session-Token bereit, das pro Tab in `sessionStorage` gespeichert wird.
+- **WebSocket:** Der jeweilige Tab übergibt sein Token beim WebSocket-Upgrade, damit der Server die passende Session und User-ID verwendet.
+- **Initialisierung:** Ein Tab ohne eigenes Token zeigt immer den Login und übernimmt nicht automatisch den Cookie eines anderen Tabs.
+- **Validierung:** `bunx tsc --noEmit` und `bun run build` laufen erfolgreich.
+
+## 2026-09-24 - Account-Isolation
+
+- **Lokaler Zustand:** `localStorage` verwendet jetzt einen Account-spezifischen Key (`messenger-app-state:<userId>`), damit neue Accounts keine lokalen Räume oder Nachrichten anderer Accounts sehen.
+- **Initialisierung:** Vor der Sessionprüfung wird nur der geschützte globale Raum angezeigt; der Account-Zustand wird erst nach der Identitätsprüfung geladen.
+- **Serverzugriff:** Bei bestehenden Räumen darf ein Nutzer nicht mehr durch eine manipulierte Payload als Teilnehmer eingetragen werden. Nachrichten und Raumaktionen werden nur für Mitglieder akzeptiert.
+- **Validierung:** `bunx tsc --noEmit` und `bun run build` laufen erfolgreich; der aktualisierte Server startet auf Port 3001.
+
+## 2026-09-24 - Sicherheitsüberarbeitung
+
+- **Serveridentitaet:** Nachrichtenaktionen verwenden die aus der Better-Auth-Session gelesene User-ID. Clientseitige `authorId`-Werte werden nicht mehr als Berechtigung akzeptiert.
+- **Raumzugriff:** Der Server prüft die Mitgliedschaft vor Nachrichten, Raumloeschungen und Nachrichtenaktionen. Der globale Raum bleibt geschützt.
+- **Reaktionen:** Der Server toggelt Reaktionen selbst anhand des authentifizierten Users, statt eine beliebige User-ID-Liste des Clients zu übernehmen.
+- **Payloadschutz:** Ungültiges JSON wird verworfen und WebSocket-Payloads werden auf ungefähr 8 MB begrenzt.
+- **Secret:** In Produktionsumgebungen muss `BETTER_AUTH_SECRET` gesetzt sein; das Entwicklungs-Secret ist nur ein lokaler Fallback.
+- **Validierung:** `bunx tsc --noEmit`, `bun run build` und ein Serverstart mit Better-Auth laufen erfolgreich.
+
+## 2026-09-24 - Echte Account-Authentifizierung
+
+- **Framework:** Better Auth wurde mit dem Drizzle-SQLite-Adapter integriert.
+- **Accounts:** Registrierung und Anmeldung verwenden E-Mail und Passwort. Better Auth speichert Nutzer, Accounts, Sessions und Verifikationsdaten in SQLite.
+- **Sessions:** Auth-Routen laufen unter `/api/auth/*`; der WebSocket-Upgrade wird serverseitig anhand der Better-Auth-Session geprüft.
+- **Identitaet:** Presence und Nachrichten verwenden die vom Server verifizierte User-ID statt einer frei vom Client bestimmten Identitaet.
+- **Offline-Fallback:** Nach einer erfolgreichen Anmeldung darf der lokale Userzustand offline weiter angezeigt werden; neue Account-Anmeldungen benötigen den Server.
+- **Validierung:** Better-Auth-Registrierung antwortet erfolgreich mit HTTP 200; `bunx tsc --noEmit` und `bun run build` laufen erfolgreich.
+
+## 2026-09-24 - Reply-Ausrichtung
+
+- **Layout:** Reply-Aktionen unter Nachrichten des Gegenuebers werden links am Nachrichtenblock ausgerichtet; eigene Nachrichtenaktionen bleiben rechts ausgerichtet.
+- **Validierung:** `bunx tsc --noEmit` und `bun run build` laufen erfolgreich.
+
 ## Dateiübersicht
 
 ### Repository

@@ -12,6 +12,7 @@ export type IncomingPayload = {
   authorId?: string;
   text?: string;
   reactions?: Record<string, string[]>;
+  emoji?: string;
 };
 
 export type ClientData = {

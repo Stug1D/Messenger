@@ -1,35 +1,51 @@
 
-# Messenger software
+# Messenger implementation
 
 ## Starten
 
-Terminal 1 startet die React-Oberflaeche:
+Abhaengigkeiten installieren:
 
 ```bash
 bun install
+```
+
+React/Vite in einem Terminal starten:
+
+```bash
 bun run dev
 ```
 
-Terminal 2 startet den WebSocket-Server:
+Den WebSocket- und SQLite-Server in einem zweiten Terminal starten:
 
 ```bash
 bun run server
 ```
 
-Die Oberflaeche ist danach unter `http://localhost:5173` erreichbar. Ohne Server startet die Oberflaeche ebenfalls und zeigt Nachrichten lokal an.
+Die Oberflaeche ist danach unter `http://localhost:5173/` erreichbar. Sie funktioniert auch ohne Server lokal weiter und synchronisiert offene Aenderungen beim Reconnect.
 
-Nachrichten, Bearbeitungen, Loeschungen und neue Raeume werden zuerst im Browser in `localStorage` gespeichert. Sobald der WebSocket-Server erreichbar ist, werden offene Aenderungen an den Server uebertragen und in `messenger.sqlite` persistiert.
+Nachrichten, Bearbeitungen, Loeschungen, Reaktionen, Antworten, Bilder und neue Raeume werden zuerst in `localStorage` gespeichert. Sobald der WebSocket-Server erreichbar ist, werden offene Aenderungen an `messenger.sqlite` uebertragen.
 
 ## Struktur
 
-- `src/App.tsx`: Login, Chatliste, Chatansicht und Nachrichtenlogik
-- `src/types.ts`: zentrale Typen fuer `User`, `Message` und `Room`
-- `src/styles.css`: responsive Oberflaeche
+- `src/App.tsx`: React-State, Persistence und Auswahl der Ansicht
+- `src/components/`: Login-, Chatlisten- und Konversationsansicht
+- `src/hooks/useChatActions.ts`: Benutzeraktionen fuer Login, Raeume, Nachrichten, Bilder, Antworten und Reaktionen
+- `src/hooks/useMessengerSocket.ts`: WebSocket, Reconnect, Presence und Synchronisation
+- `src/data.ts`: Starterraum, Emoji-Liste und Zeitformatierung
+- `src/types.ts`: zentrale Typen fuer User, Message, Room, Bilder und Reply-Referenzen
 - `src/storage.ts`: localStorage-Zustand und Offline-Warteschlangen
-- `server/index.ts`: Bun-WebSocket-Server und Client-Verbindungen
+- `src/styles.css`: responsive Oberflaeche und Nachrichtenlayout
+- `server/index.ts`: Bun-WebSocket-Einstiegspunkt und Broadcast
 - `server/message-handler.ts`: Verarbeitung der WebSocket-Anfragen
-- `server/database.ts`: SQLite-Schema und Persistenzfunktionen
-- `server/types.ts`: Server-Payloads und Clientdaten
-- `messenger.sqlite`: lokale SQLite-Datenbank des Servers (wird nicht versioniert)
+- `server/database.ts`: SQLite-Schema, Migrationen und SQL-Persistenz
+- `server/types.ts`: Server-Payloads und Verbindungsdaten
+- `messenger.sqlite`: lokale SQLite-Datenbank des Servers; wird nicht versioniert
 
-This project was created using `bun init` in bun v1.4.2. [Bun](https://bun.com) is a fast all-in-one JavaScript runtime.
+## Evaluationshinweise
+
+- Bilder muessen einen `image/*`-MIME-Type besitzen und duerfen maximal 5 MB gross sein.
+- Der Raum `Global` ist geschuetzt und kann nicht geloescht werden.
+- Accounts werden ueber Better Auth mit E-Mail, Passwort und SQLite-Sessions verwaltet.
+- Lesebestaetigungen und Tippindikatoren sind noch nicht umgesetzt.
+- Checks aus diesem Ordner: `bunx tsc --noEmit` und `bun run build`.
+
